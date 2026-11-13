@@ -1,0 +1,165 @@
+// HexTile v1.0 - Gabin Vidal 2026
+// Hexagonal tiling of the input, with optional soft blend across the seams.
+kernel HexTileKernel : ImageComputationKernel<ePixelWise>
+{
+  Image<eRead, eAccessRandom, eEdgeClamped> src;
+  Image<eWrite> dst;
+
+  param:
+    float2 fmt;         // input format (width, height)
+    float columns;
+    float rows;
+    bool regular;       // regular hexagons: rows derived from columns
+    int orientation;    // 0 = pointy top, 1 = flat top
+    int fit;            // 0 = stretch, 1 = fill (keep aspect)
+    bool mirrorCols;
+    bool mirrorRows;
+    float falloff;      // 0 = hard seams, 1 = full cell blend
+    float scale;        // content scale inside each cell
+    float gap;          // empty border between cells (0..1)
+    float2 offset;      // grid offset in pixels
+
+  local:
+    float nA;
+    float nB;
+    float dimA;
+    float dimB;
+    float F;
+    float sx;
+    float sy;
+    float ppx;
+    float ppy;
+    float extX;
+    float extY;
+    float G;
+    float PX;
+
+  void define() {
+    defineParam(fmt, "fmt", float2(1920.0f, 1080.0f));
+    defineParam(columns, "columns", 4.0f);
+    defineParam(rows, "rows", 4.0f);
+    defineParam(regular, "regular", true);
+    defineParam(orientation, "orientation", 0);
+    defineParam(fit, "fit", 1);
+    defineParam(mirrorCols, "mirrorCols", false);
+    defineParam(mirrorRows, "mirrorRows", false);
+    defineParam(falloff, "falloff", 0.0f);
+    defineParam(scale, "scale", 1.0f);
+    defineParam(gap, "gap", 0.0f);
+    defineParam(offset, "offset", float2(0.0f, 0.0f));
+  }
+
+  void init() {
+    const float K = 0.8660254f;
+    float W = max(fmt.x, 1.0f);
+    float H = max(fmt.y, 1.0f);
+    float cols = max(columns, 0.01f);
+    float rws = max(rows, 0.01f);
+    if (regular) {
+      rws = (orientation == 0) ? H * cols / (W * K) : H * cols * K / W;
+    }
+    if (orientation == 0) {
+      nA = cols; dimA = W; nB = rws; dimB = H;
+    } else {
+      nA = rws; dimA = H; nB = cols; dimB = W;
+    }
+    // one pixel in lattice units -> minimum blend width (antialiasing)
+    float px = max(nA / dimA, nB * K / dimB);
+    F = max(falloff * 0.5f, px);
+    PX = px;
+    G = max(gap, 0.0f) * 0.25f;
+
+    float pxA = dimA / nA;
+    float pxB = dimB / nB;
+    if (orientation == 0) {
+      ppx = pxA; ppy = pxB; extX = 1.0f; extY = 4.0f / 3.0f;
+    } else {
+      ppx = pxB; ppy = pxA; extX = 4.0f / 3.0f; extY = 1.0f;
+    }
+    float bw = extX * ppx;
+    float bh = extY * ppy;
+    if (fit == 1) {
+      float s = max(bw / W, bh / H);
+      sx = W * s; sy = H * s;
+    } else {
+      sx = bw; sy = bh;
+    }
+    float sc = max(scale, 0.0001f);
+    sx *= sc;
+    sy *= sc;
+  }
+
+  bool isOdd(int n) {
+    return ((n % 2) + 2) % 2 == 1;
+  }
+
+  float dist2(float A, float B, int i, int j) {
+    const float K = 0.8660254f;
+    float shift = isOdd(j) ? 0.5f : 0.0f;
+    float dA = A - (float(i) + 0.5f + shift);
+    float dB = (B - (float(j) + 0.5f)) * K;
+    return dA * dA + dB * dB;
+  }
+
+  void process(int2 pos) {
+    float W = max(fmt.x, 1.0f);
+    float H = max(fmt.y, 1.0f);
+    float x = float(pos.x) + 0.5f - offset.x;
+    float y = float(pos.y) + 0.5f - offset.y;
+    float A = (orientation == 0) ? x / dimA * nA : y / dimA * nA;
+    float B = (orientation == 0) ? y / dimB * nB : x / dimB * nB;
+    int j0 = int(floor(B));
+
+    // nearest cell centre
+    float dmin = 1.0e9f;
+    for (int dj = -1; dj <= 1; dj++) {
+      int j = j0 + dj;
+      float shift = isOdd(j) ? 0.5f : 0.0f;
+      int i0 = int(floor(A - shift));
+      for (int di = -1; di <= 1; di++) {
+        dmin = min(dmin, dist2(A, B, i0 + di, j));
+      }
+    }
+
+    float4 acc = float4(0.0f);
+    float e2 = 1.0e9f;  // distance to the closest seam
+    float wsum = 0.0f;
+    for (int dj = -1; dj <= 1; dj++) {
+      int j = j0 + dj;
+      float shift = isOdd(j) ? 0.5f : 0.0f;
+      int i0 = int(floor(A - shift));
+      for (int di = -1; di <= 1; di++) {
+        int i = i0 + di;
+        // distance to the seam shared with the nearest cell
+        float e = (dist2(A, B, i, j) - dmin) * 0.5f;
+        if (e > 0.0f) e2 = min(e2, e);
+        if (e < F) {
+          float t = e / F;
+          float w = 1.0f - t * t * (3.0f - 2.0f * t);
+          float lA = A - (float(i) + 0.5f + shift);
+          float lB = B - (float(j) + 0.5f);
+          float lx = (orientation == 0) ? lA : lB;
+          float ly = (orientation == 0) ? lB : lA;
+          int col = (orientation == 0) ? i : j;
+          int row = (orientation == 0) ? j : i;
+          float u = 0.5f + lx * ppx / sx;
+          float v = 0.5f + ly * ppy / sy;
+          if (mirrorCols && isOdd(col)) u = 1.0f - u;
+          if (mirrorRows && isOdd(row)) v = 1.0f - v;
+          // wrap only outside the image (content scale < 1), keeps edges clean
+          if (u < 0.0f || u > 1.0f) u = u - floor(u);
+          if (v < 0.0f || v > 1.0f) v = v - floor(v);
+          float4 c = bilinear(src, u * W - 0.5f, v * H - 0.5f);
+          acc += c * w;
+          wsum += w;
+        }
+      }
+    }
+    float4 res = acc / max(wsum, 0.000001f);
+    if (G > 0.0f) {
+      float t = clamp((e2 - G) / PX, 0.0f, 1.0f);
+      res *= t * t * (3.0f - 2.0f * t);
+    }
+    dst() = res;
+  }
+};

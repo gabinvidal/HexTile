@@ -1,0 +1,22 @@
+# IDE / OS
+.vs/
+.vscode/
+*.user
+Thumbs.db
+.DS_Store
+__pycache__/
+*.pyc
+
+# Nuke
+*.autosave
+*.nk~
+
+# local developer helpers
+dev/
+
+# release / publishing (kept outside the repo)
+branding/
+*.zip
+NUKEPEDIA_LISTING.md
+_*.bat
+_to_delete/

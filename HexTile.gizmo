@@ -1,0 +1,94 @@
+Gizmo {
+ name HexTile
+ help "HexTile - hexagonal tiling (like the native Tile node) with soft seams."
+ knobChanged "n = nuke.thisNode()\nk = nuke.thisKnob()\nif k.name() in ('regular', 'showPanel'):\n    n\['rows'].setEnabled(not n\['regular'].value())\n"
+ tile_color 0xc9a24bff
+ addUserKnob {20 hextile_tab l "Hex Tile"}
+ addUserKnob {4 orientation t "Pointy Top: offset rows. Flat Top: offset columns." M {"Pointy Top" "Flat Top"}}
+ addUserKnob {4 fit t "Fill: keeps the aspect of the image and crops it to the hexagon. Stretch: squeezes the image into the bounding box of the hexagon." -STARTLINE M {Stretch Fill}}
+ fit Fill
+ addUserKnob {26 div1 l "" +STARTLINE}
+ addUserKnob {7 columns R 1 20}
+ columns 4
+ addUserKnob {6 mirror_cols l mirror t "Flips every other column horizontally." -STARTLINE}
+ addUserKnob {7 rows +DISABLED R 1 20}
+ rows 4
+ addUserKnob {6 mirror_rows l mirror t "Flips every other row vertically." -STARTLINE}
+ addUserKnob {6 regular l "regular hexagons" t "Rows follows columns so the hexagons stay regular. Uncheck to set rows by hand (stretched hexagons)." +STARTLINE}
+ regular true
+ addUserKnob {26 div2 l "" +STARTLINE}
+ addUserKnob {7 falloff l "seam falloff" t "Transition between cells. 0 = sharp (antialiased) seams, 1 = blend across the whole cell."}
+ addUserKnob {7 gap t "Empty space (black, alpha 0) between the hexagons."}
+ addUserKnob {26 div3 l "" +STARTLINE}
+ addUserKnob {7 content_scale l "content scale" t "Zoom of the image inside each cell. Below 1 the image repeats (wrap)." R 0.1 4}
+ content_scale 1
+ addUserKnob {12 grid_offset l "grid offset" t "Offset of the grid, in pixels."}
+ addUserKnob {26 mask_div l "" +STARTLINE}
+ addUserKnob {41 maskChannelMask l mask T Match.maskChannelMask}
+ addUserKnob {41 invert_mask l invert -STARTLINE T Match.invert_mask}
+ addUserKnob {41 fringe -STARTLINE T Match.fringe}
+ addUserKnob {41 mix T Match.mix}
+ addUserKnob {20 info_tab l Info}
+ addUserKnob {26 info l "" +STARTLINE T "<b>HexTile</b> &nbsp; hexagonal tiling<br><br>Like the native <b>Tile</b> node, on a grid of hexagons.<br><br>&bull; <b>orientation</b> : pointy top (offset rows) or flat top (offset columns).<br>&bull; <b>fit</b> : <i>Fill</i> keeps the image aspect and crops it, <i>Stretch</i> squeezes it into the hexagon.<br>&bull; <b>columns / rows</b> : number of cells. With <i>regular hexagons</i> on, rows follows columns so the hexagons stay regular.<br>&bull; <b>mirror</b> : flips every other column / row.<br>&bull; <b>seam falloff</b> : 0 = sharp (antialiased) seams, 1 = blend across the whole cell.<br>&bull; <b>gap</b> : empty space between the hexagons (alpha 0).<br>&bull; <b>content scale / grid offset</b> : zoom of the image inside each cell, offset of the grid in pixels.<br><br>BlinkScript : runs on the GPU when available."}
+ addUserKnob {20 about_tab l About}
+ addUserKnob {26 about_info l "" +STARTLINE T "<b>HexTile</b> &nbsp; v1.0<br>Hexagonal tiling with soft seams.<br><br>Created by <b>Gabin Vidal</b> &#8212; 2026<br><a href='https://www.linkedin.com/in/gabinvidal' style='color:#6c9fff;'>linkedin.com/in/gabinvidal</a>"}
+}
+ Input {
+  inputs 0
+  name mask
+  xpos 200
+  ypos 40
+  number 1
+ }
+ Input {
+  inputs 0
+  name src
+  xpos 0
+  ypos -200
+ }
+set N1947e000 [stack 0]
+ Crop {
+  box {{0} {0} {input.width} {input.height}}
+  name toFormat
+  xpos 0
+  ypos -130
+ }
+ BlinkScript {
+  recompileCount 1
+  KernelDescription "3 \"HexTileKernel\" iterate pixelWise 71d2ef122a28ca0ed9dba1c72e15510f1d627ab9c577843a997fc4210f9943a5 2 \"src\" Read Random \"dst\" Write Point 12 \"fmt\" Float 2 AADwRAAAh0Q= \"columns\" Float 1 AACAQA== \"rows\" Float 1 AACAQA== \"regular\" Bool 1 AQ== \"orientation\" Int 1 AAAAAA== \"fit\" Int 1 AQAAAA== \"mirrorCols\" Bool 1 AA== \"mirrorRows\" Bool 1 AA== \"falloff\" Float 1 AAAAAA== \"scale\" Float 1 AACAPw== \"gap\" Float 1 AAAAAA== \"offset\" Float 2 AAAAAAAAAAA= 12 \"fmt\" 2 1 Default \"columns\" 1 1 Default \"rows\" 1 1 Default \"regular\" 1 1 Default \"orientation\" 1 1 Default \"fit\" 1 1 Default \"mirrorCols\" 1 1 Default \"mirrorRows\" 1 1 Default \"falloff\" 1 1 Default \"scale\" 1 1 Default \"gap\" 1 1 Default \"offset\" 2 1 Default 13 \"nA\" Float 1 1 AAAAAA== \"nB\" Float 1 1 AAAAAA== \"dimA\" Float 1 1 AAAAAA== \"dimB\" Float 1 1 AAAAAA== \"F\" Float 1 1 AAAAAA== \"sx\" Float 1 1 AAAAAA== \"sy\" Float 1 1 AAAAAA== \"ppx\" Float 1 1 AAAAAA== \"ppy\" Float 1 1 AAAAAA== \"extX\" Float 1 1 AAAAAA== \"extY\" Float 1 1 AAAAAA== \"G\" Float 1 1 AAAAAA== \"PX\" Float 1 1 AAAAAA=="
+  kernelSource "// HexTile v1.0 - Gabin Vidal 2026\n// Hexagonal tiling of the input, with optional soft blend across the seams.\nkernel HexTileKernel : ImageComputationKernel<ePixelWise>\n\{\n  Image<eRead, eAccessRandom, eEdgeClamped> src;\n  Image<eWrite> dst;\n\n  param:\n    float2 fmt;         // input format (width, height)\n    float columns;\n    float rows;\n    bool regular;       // regular hexagons: rows derived from columns\n    int orientation;    // 0 = pointy top, 1 = flat top\n    int fit;            // 0 = stretch, 1 = fill (keep aspect)\n    bool mirrorCols;\n    bool mirrorRows;\n    float falloff;      // 0 = hard seams, 1 = full cell blend\n    float scale;        // content scale inside each cell\n    float gap;          // empty border between cells (0..1)\n    float2 offset;      // grid offset in pixels\n\n  local:\n    float nA;\n    float nB;\n    float dimA;\n    float dimB;\n    float F;\n    float sx;\n    float sy;\n    float ppx;\n    float ppy;\n    float extX;\n    float extY;\n    float G;\n    float PX;\n\n  void define() \{\n    defineParam(fmt, \"fmt\", float2(1920.0f, 1080.0f));\n    defineParam(columns, \"columns\", 4.0f);\n    defineParam(rows, \"rows\", 4.0f);\n    defineParam(regular, \"regular\", true);\n    defineParam(orientation, \"orientation\", 0);\n    defineParam(fit, \"fit\", 1);\n    defineParam(mirrorCols, \"mirrorCols\", false);\n    defineParam(mirrorRows, \"mirrorRows\", false);\n    defineParam(falloff, \"falloff\", 0.0f);\n    defineParam(scale, \"scale\", 1.0f);\n    defineParam(gap, \"gap\", 0.0f);\n    defineParam(offset, \"offset\", float2(0.0f, 0.0f));\n  \}\n\n  void init() \{\n    const float K = 0.8660254f;\n    float W = max(fmt.x, 1.0f);\n    float H = max(fmt.y, 1.0f);\n    float cols = max(columns, 0.01f);\n    float rws = max(rows, 0.01f);\n    if (regular) \{\n      rws = (orientation == 0) ? H * cols / (W * K) : H * cols * K / W;\n    \}\n    if (orientation == 0) \{\n      nA = cols; dimA = W; nB = rws; dimB = H;\n    \} else \{\n      nA = rws; dimA = H; nB = cols; dimB = W;\n    \}\n    // one pixel in lattice units -> minimum blend width (antialiasing)\n    float px = max(nA / dimA, nB * K / dimB);\n    F = max(falloff * 0.5f, px);\n    PX = px;\n    G = max(gap, 0.0f) * 0.25f;\n\n    float pxA = dimA / nA;\n    float pxB = dimB / nB;\n    if (orientation == 0) \{\n      ppx = pxA; ppy = pxB; extX = 1.0f; extY = 4.0f / 3.0f;\n    \} else \{\n      ppx = pxB; ppy = pxA; extX = 4.0f / 3.0f; extY = 1.0f;\n    \}\n    float bw = extX * ppx;\n    float bh = extY * ppy;\n    if (fit == 1) \{\n      float s = max(bw / W, bh / H);\n      sx = W * s; sy = H * s;\n    \} else \{\n      sx = bw; sy = bh;\n    \}\n    float sc = max(scale, 0.0001f);\n    sx *= sc;\n    sy *= sc;\n  \}\n\n  bool isOdd(int n) \{\n    return ((n % 2) + 2) % 2 == 1;\n  \}\n\n  float dist2(float A, float B, int i, int j) \{\n    const float K = 0.8660254f;\n    float shift = isOdd(j) ? 0.5f : 0.0f;\n    float dA = A - (float(i) + 0.5f + shift);\n    float dB = (B - (float(j) + 0.5f)) * K;\n    return dA * dA + dB * dB;\n  \}\n\n  void process(int2 pos) \{\n    float W = max(fmt.x, 1.0f);\n    float H = max(fmt.y, 1.0f);\n    float x = float(pos.x) + 0.5f - offset.x;\n    float y = float(pos.y) + 0.5f - offset.y;\n    float A = (orientation == 0) ? x / dimA * nA : y / dimA * nA;\n    float B = (orientation == 0) ? y / dimB * nB : x / dimB * nB;\n    int j0 = int(floor(B));\n\n    // nearest cell centre\n    float dmin = 1.0e9f;\n    for (int dj = -1; dj <= 1; dj++) \{\n      int j = j0 + dj;\n      float shift = isOdd(j) ? 0.5f : 0.0f;\n      int i0 = int(floor(A - shift));\n      for (int di = -1; di <= 1; di++) \{\n        dmin = min(dmin, dist2(A, B, i0 + di, j));\n      \}\n    \}\n\n    float4 acc = float4(0.0f);\n    float e2 = 1.0e9f;  // distance to the closest seam\n    float wsum = 0.0f;\n    for (int dj = -1; dj <= 1; dj++) \{\n      int j = j0 + dj;\n      float shift = isOdd(j) ? 0.5f : 0.0f;\n      int i0 = int(floor(A - shift));\n      for (int di = -1; di <= 1; di++) \{\n        int i = i0 + di;\n        // distance to the seam shared with the nearest cell\n        float e = (dist2(A, B, i, j) - dmin) * 0.5f;\n        if (e > 0.0f) e2 = min(e2, e);\n        if (e < F) \{\n          float t = e / F;\n          float w = 1.0f - t * t * (3.0f - 2.0f * t);\n          float lA = A - (float(i) + 0.5f + shift);\n          float lB = B - (float(j) + 0.5f);\n          float lx = (orientation == 0) ? lA : lB;\n          float ly = (orientation == 0) ? lB : lA;\n          int col = (orientation == 0) ? i : j;\n          int row = (orientation == 0) ? j : i;\n          float u = 0.5f + lx * ppx / sx;\n          float v = 0.5f + ly * ppy / sy;\n          if (mirrorCols && isOdd(col)) u = 1.0f - u;\n          if (mirrorRows && isOdd(row)) v = 1.0f - v;\n          // wrap only outside the image (content scale < 1), keeps edges clean\n          if (u < 0.0f || u > 1.0f) u = u - floor(u);\n          if (v < 0.0f || v > 1.0f) v = v - floor(v);\n          float4 c = bilinear(src, u * W - 0.5f, v * H - 0.5f);\n          acc += c * w;\n          wsum += w;\n        \}\n      \}\n    \}\n    float4 res = acc / max(wsum, 0.000001f);\n    if (G > 0.0f) \{\n      float t = clamp((e2 - G) / PX, 0.0f, 1.0f);\n      res *= t * t * (3.0f - 2.0f * t);\n    \}\n    dst() = res;\n  \}\n\};\n"
+  rebuild ""
+  HexTileKernel_fmt {{input.width} {input.height}}
+  HexTileKernel_columns {{parent.columns}}
+  HexTileKernel_rows {{parent.rows}}
+  HexTileKernel_regular {{parent.regular}}
+  HexTileKernel_orientation {{parent.orientation}}
+  HexTileKernel_fit {{parent.fit}}
+  HexTileKernel_mirrorCols {{parent.mirror_cols}}
+  HexTileKernel_mirrorRows {{parent.mirror_rows}}
+  HexTileKernel_falloff {{parent.falloff}}
+  HexTileKernel_scale {{parent.content_scale}}
+  HexTileKernel_gap {{parent.gap}}
+  HexTileKernel_offset {{parent.grid_offset.x} {parent.grid_offset.y}}
+  rebuild_finalise ""
+  name HexTileBlink
+  xpos 0
+  ypos -60
+ }
+push $N1947e000
+ MergeExpression {
+  inputs 2+1
+  expr0 Ar
+  expr1 Ag
+  expr2 Ab
+  expr3 Aa
+  name Match
+  xpos 0
+  ypos 40
+ }
+ Output {
+  name Output1
+  xpos 0
+  ypos 110
+ }
+end_group
